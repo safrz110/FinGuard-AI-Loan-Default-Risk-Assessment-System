@@ -1,351 +1,502 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from datetime import datetime
-import math
+import pandas as pd
+import joblib
+import pickle
+import warnings
+import time
+warnings.filterwarnings("ignore")
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
+# ─── Page Config ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="FinGuard AI – Loan Default Risk System",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+    page_icon="🏦",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 
-# ============================================================
-# MODEL METADATA (UPDATE WITH YOUR REAL DECISION TREE METRICS)
-# ============================================================
-MODEL_NAME = "Decision Tree Classifier"
-ACCURACY = 0.862      # 86.2%
-F1_SCORE = 0.847      # 84.7%
-TRAINING_SAMPLES = 12500
-
-# ============================================================
-# CUSTOM CSS – SLIGHTLY DARK BACKGROUND, LIGHT CARDS, GOOD CONTRAST
-# ============================================================
+# ─── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Global – slightly dark background */
-    .stApp {
-        background: linear-gradient(135deg, #1a2a3a 0%, #0f1a24 100%);
-    }
-    .main-header {
-        font-size: 2.8rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #5bc0be 0%, #3a9b9b 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 0.2rem;
-    }
-    .sub-header {
-        text-align: center;
-        color: #a8c9c9;
-        margin-bottom: 2rem;
-        font-size: 1rem;
-        font-weight: 500;
-    }
-    /* Metric cards (top row) – light, elevated */
-    .metric-card {
-        background: #ffffff;
-        border-radius: 1.5rem;
-        padding: 1rem;
-        text-align: center;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.2);
-        border: none;
-        transition: 0.2s;
-    }
-    .metric-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 28px rgba(0,0,0,0.3);
-    }
-    .metric-value {
-        font-size: 2.2rem;
-        font-weight: 800;
-        color: #1f6d6d;
-        line-height: 1;
-    }
-    .metric-label {
-        font-size: 0.8rem;
-        color: #2c5a5a;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-top: 0.3rem;
-        font-weight: 600;
-    }
-    /* Input sections – light cards */
-    .input-section {
-        background: #ffffff;
-        border-radius: 1.5rem;
-        padding: 1.5rem;
-        margin-top: 1rem;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-        border: none;
-    }
-    .section-title {
-        font-size: 1.2rem;
-        font-weight: 700;
-        color: #1f6d6d;
-        margin-bottom: 1rem;
-        border-left: 4px solid #1f6d6d;
-        padding-left: 0.8rem;
-    }
-    /* Risk result card */
-    .risk-card {
-        background: #ffffff;
-        border-radius: 1.5rem;
-        padding: 1.5rem;
-        margin-top: 1rem;
-        text-align: center;
-        box-shadow: 0 12px 28px rgba(0,0,0,0.2);
-    }
-    .risk-low {
-        background: linear-gradient(135deg, #d0f0e8 0%, #b2dfdb 100%);
-        border-left: 8px solid #2e7d32;
-        color: #004d40;
-    }
-    .risk-medium {
-        background: linear-gradient(135deg, #ffe0b2 0%, #ffcc80 100%);
-        border-left: 8px solid #e65100;
-        color: #8b4513;
-    }
-    .risk-high {
-        background: linear-gradient(135deg, #ffcdd2 0%, #ef9a9a 100%);
-        border-left: 8px solid #c62828;
-        color: #b71c1c;
-    }
-    .risk-value {
-        font-size: 2rem;
-        font-weight: 800;
-        margin: 0.5rem 0;
-    }
-    /* Buttons – vibrant to stand out */
-    .stButton > button {
-        background: linear-gradient(135deg, #2c7a7a 0%, #1f6d6d 100%);
-        color: white;
-        border: none;
-        padding: 0.75rem 2rem;
-        font-weight: 700;
-        border-radius: 2.5rem;
-        width: 100%;
-        transition: 0.2s;
-        font-size: 1rem;
-        letter-spacing: 0.5px;
-    }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
-        background: linear-gradient(135deg, #3a9b9b 0%, #2c7a7a 100%);
-    }
-    /* Form inputs */
-    .stSelectbox label, .stNumberInput label {
-        font-weight: 600;
-        color: #1f6d6d;
-    }
-    hr {
-        margin: 1rem 0;
-    }
-    .footer {
-        text-align: center;
-        color: #8fbbbb;
-        font-size: 0.7rem;
-        margin-top: 2rem;
-        border-top: 1px solid #2c5a5a;
-        padding-top: 1rem;
-    }
-    /* Info & warning boxes – light background, dark text */
-    .stAlert {
-        border-radius: 0.8rem;
-        background-color: #f8f9fa;
-        color: #1a2a3a;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, [class*="css"] {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    background: #0A0E14 !important;
+    color: #D6DEEB;
+}
+.block-container {
+    padding: 0 1.5rem 5rem !important;
+    max-width: 820px !important;
+}
+
+/* ── HERO ────────────────────────────────────────────────── */
+.hero {
+    position: relative;
+    padding: 3rem 2.5rem 2.5rem;
+    margin-bottom: 2.2rem;
+    overflow: hidden;
+    border-radius: 0 0 24px 24px;
+    background: linear-gradient(135deg, #0F1B2E 0%, #0A0E14 100%);
+    border-bottom: 1px solid rgba(212,175,55,0.15);
+}
+.hero::after {
+    content: '';
+    position: absolute; top: -100px; right: -100px;
+    width: 380px; height: 380px;
+    background: radial-gradient(circle, rgba(212,175,55,0.10) 0%, transparent 70%);
+    pointer-events: none;
+}
+.hero-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 3.5px; text-transform: uppercase;
+    color: #D4AF37; margin-bottom: 1rem;
+    display: flex; align-items: center; gap: 0.6rem;
+}
+.hero-eyebrow::before {
+    content: ''; display: inline-block;
+    width: 22px; height: 1px; background: #D4AF37;
+}
+.hero h1 {
+    font-size: 2.4rem; font-weight: 800; letter-spacing: -1px;
+    line-height: 1.1; color: #F5F7FA; margin-bottom: 0.8rem;
+}
+.hero h1 em { font-style: normal; color: #D4AF37; }
+.hero-sub { font-size: 0.88rem; color: #6B7A99; line-height: 1.65; max-width: 520px; }
+
+.model-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    margin-top: 1rem;
+    background: rgba(212,175,55,0.08);
+    border: 1px solid rgba(212,175,55,0.25);
+    border-radius: 8px; padding: 0.4rem 0.9rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+    letter-spacing: 1.5px; text-transform: uppercase; color: #D4AF37;
+}
+.model-badge::before { content: '◆'; font-size: 0.7rem; }
+
+.hero-stats {
+    display: flex; gap: 2rem; margin-top: 1.8rem; flex-wrap: wrap;
+}
+.hstat { border-left: 2px solid rgba(212,175,55,0.3); padding-left: 0.9rem; }
+.hstat-val {
+    font-family: 'JetBrains Mono', monospace; font-size: 1.3rem;
+    font-weight: 700; color: #D4AF37; display: block;
+}
+.hstat-lbl {
+    font-size: 0.62rem; text-transform: uppercase; letter-spacing: 1.5px;
+    color: #4A5670; display: block; margin-top: 0.15rem;
+}
+
+/* ── INPUT CARDS ─────────────────────────────────────────── */
+.icard {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px; padding: 1.5rem 1.8rem 1rem;
+    margin-bottom: 1rem; position: relative; overflow: hidden;
+}
+.icard::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 2px; background: linear-gradient(90deg, #D4AF37, transparent); opacity: 0.35;
+}
+.icard-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
+    letter-spacing: 2.5px; text-transform: uppercase;
+    color: #D4AF37; margin-bottom: 1.1rem; opacity: 0.9;
+}
+
+/* ── WIDGET OVERRIDES ────────────────────────────────────── */
+.stSlider label, .stSelectbox label, .stNumberInput label {
+    color: #8896AE !important; font-size: 0.8rem !important;
+    font-weight: 500 !important; letter-spacing: 0.2px !important;
+}
+.stSlider [data-testid="stThumbValue"] {
+    font-family: 'JetBrains Mono', monospace !important; font-size: 0.7rem !important;
+    background: #16202E !important; color: #D4AF37 !important;
+    border: 1px solid rgba(212,175,55,0.3) !important; border-radius: 5px !important;
+}
+div[data-baseweb="select"] > div {
+    background: rgba(255,255,255,0.04) !important;
+    border-color: rgba(255,255,255,0.1) !important; border-radius: 8px !important;
+}
+
+/* ── ASSESS BUTTON ───────────────────────────────────────── */
+div.stButton > button {
+    width: 100%;
+    background: linear-gradient(135deg, #D4AF37 0%, #B8901F 100%);
+    color: #0A0E14 !important; font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-weight: 700 !important; font-size: 0.95rem !important;
+    letter-spacing: 1px; text-transform: uppercase;
+    padding: 0.85rem 2rem; border: none; border-radius: 10px;
+    box-shadow: 0 0 30px rgba(212,175,55,0.18), 0 4px 15px rgba(0,0,0,0.4);
+    transition: all 0.2s ease; margin-top: 0.6rem;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 50px rgba(212,175,55,0.32), 0 8px 25px rgba(0,0,0,0.5);
+}
+
+/* ── RESULT PANELS ───────────────────────────────────────── */
+.result-good {
+    background: linear-gradient(135deg, #06231A, #0A3326);
+    border: 1px solid #2ECC71; border-radius: 18px;
+    padding: 2.2rem 2rem 1.8rem; text-align: center;
+    box-shadow: 0 0 60px rgba(46,204,113,0.10), 0 8px 30px rgba(0,0,0,0.4);
+    margin: 1.5rem 0;
+}
+.result-warn {
+    background: linear-gradient(135deg, #2B1A00, #3D2700);
+    border: 1px solid #FFB020; border-radius: 18px;
+    padding: 2.2rem 2rem 1.8rem; text-align: center;
+    box-shadow: 0 0 60px rgba(255,176,32,0.10), 0 8px 30px rgba(0,0,0,0.4);
+    margin: 1.5rem 0;
+}
+.result-bad {
+    background: linear-gradient(135deg, #2B0808, #3D0C0C);
+    border: 1px solid #E74C3C; border-radius: 18px;
+    padding: 2.2rem 2rem 1.8rem; text-align: center;
+    box-shadow: 0 0 60px rgba(231,76,60,0.10), 0 8px 30px rgba(0,0,0,0.4);
+    margin: 1.5rem 0;
+}
+.res-icon { font-size: 2.5rem; margin-bottom: 0.6rem; }
+.res-verdict { font-size: 1.6rem; font-weight: 800; color: white; letter-spacing: -0.3px; }
+.res-type {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+    letter-spacing: 3px; text-transform: uppercase;
+    margin-top: 0.4rem; opacity: 0.6; color: white;
+}
+.res-conf {
+    font-family: 'JetBrains Mono', monospace; font-size: 3rem;
+    font-weight: 700; color: white; line-height: 1; margin: 0.8rem 0 0.3rem;
+}
+.res-sub { font-size: 0.78rem; color: rgba(255,255,255,0.4); letter-spacing: 0.5px; }
+.res-action {
+    margin-top: 1.2rem; background: rgba(255,255,255,0.06);
+    border-radius: 10px; padding: 0.85rem 1.1rem;
+    font-size: 0.82rem; color: rgba(255,255,255,0.78);
+    line-height: 1.6; text-align: left;
+}
+
+/* ── RISK GAUGE BAR ──────────────────────────────────────── */
+.gauge-wrap { margin-top: 1.2rem; }
+.gauge-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: #4A5670; margin-bottom: 0.4rem;
+    display: flex; justify-content: space-between;
+}
+.gauge-track {
+    height: 10px; border-radius: 5px; overflow: hidden;
+    background: rgba(255,255,255,0.06);
+    display: flex;
+}
+.gauge-seg { height: 100%; }
+
+/* ── CHIPS ───────────────────────────────────────────────── */
+.chips { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+.chip {
+    background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 8px; padding: 0.55rem 0.9rem; flex: 1; min-width: 120px;
+}
+.chip-k {
+    font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1.3px;
+    color: #4A5670; display: block; margin-bottom: 0.2rem;
+}
+.chip-v {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;
+    font-weight: 700; color: #D6DEEB;
+}
+
+/* ── FOOTER ──────────────────────────────────────────────── */
+.app-footer {
+    text-align: center; margin-top: 3rem; padding-top: 1.5rem;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
+    color: #2A3650; letter-spacing: 2px; text-transform: uppercase;
+}
+
+#MainMenu, footer, header { visibility: hidden; }
+.stSpinner > div { border-top-color: #D4AF37 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================
-# RULE‑BASED RISK CALCULATOR (Decision Tree Logic)
-# ============================================================
-def calculate_risk(age, income, loan_amount, credit_score, employment_status, marital_status):
+
+# ─── Load Artifacts & Train Classifier ───────────────────────────────────────
+@st.cache_resource(show_spinner=False)
+def load_artifacts():
+    from sklearn.ensemble import GradientBoostingClassifier
+    from sklearn.model_selection import train_test_split
+
+    preprocessor = joblib.load("best_model.pkl")   # ColumnTransformer
+    with open("feature_columns.pkl", "rb") as f:
+        feature_cols = pickle.load(f)
+
+    np.random.seed(42)
+    n = 6000
+
+    age = np.random.randint(21, 70, n)
+    income = np.random.gamma(shape=3, scale=25000, size=n).clip(15000, 200000)
+    credit_score = np.clip(np.random.normal(670, 100, n), 300, 900)
+    gender = np.random.choice(['Male', 'Female'], n)
+    employment_status = np.random.choice(
+        ['Employed', 'Self-employed', 'Unemployed'], n, p=[0.7, 0.2, 0.1]
+    )
+    marital_status = np.random.choice(['Married', 'Single'], n)
+    loan_amount = (income * np.random.uniform(0.1, 0.7, n)).clip(2000, 80000)
+    applicant_id = np.arange(1, n + 1)
+
+    income_loan_ratio = income / loan_amount
+    loan_burden       = loan_amount / income
+    income_x_age      = income * age
+    loan_x_income     = loan_amount * income
+    loan_per_age      = loan_amount / age
+    loan_amount_log   = np.log1p(loan_amount)
+    income_log        = np.log1p(income)
+
+    risk_score = (
+        (700 - credit_score) * 50
+        + loan_burden * 5000
+        - (income / 1000)
+        + np.where(employment_status == 'Unemployed', 8000, 0)
+        + np.where(employment_status == 'Self-employed', 2000, 0)
+    )
+
+    df = pd.DataFrame({
+        'applicant_id': applicant_id, 'gender': gender, 'age': age, 'income': income,
+        'loan_amount': loan_amount, 'credit_score': credit_score,
+        'employment_status': employment_status, 'marital_status': marital_status,
+        'income_loan_ratio': income_loan_ratio, 'loan_burden': loan_burden,
+        'risk_score': risk_score, 'income_x_age': income_x_age,
+        'loan_x_income': loan_x_income, 'loan_per_age': loan_per_age,
+        'loan_amount_log': loan_amount_log, 'income_log': income_log,
+    })
+
+    default_logit = (
+        -0.012 * credit_score
+        + 2.0 * loan_burden
+        + 0.00003 * risk_score
+        + np.where(employment_status == 'Unemployed', 1.5, 0)
+        + np.where(employment_status == 'Self-employed', 0.4, 0)
+        - 0.000008 * income
+        + np.random.normal(0, 0.5, n)
+        + 6.5
+    )
+    default_prob = 1 / (1 + np.exp(-default_logit))
+    y = (default_prob > 0.5).astype(int)
+
+    for extra_col in ['age_group', 'income_level', 'loan_level']:
+        if extra_col not in df.columns:
+            df[extra_col] = 'NA'
+
+    X = df[feature_cols]
+    X_t = preprocessor.transform(X)
+    X_train, _, y_train, _ = train_test_split(
+        X_t, y, test_size=0.15, random_state=42, stratify=y
+    )
+
+    clf = GradientBoostingClassifier(
+        n_estimators=150, max_depth=4, learning_rate=0.08, random_state=42
+    )
+    clf.fit(X_train, y_train)
+    return preprocessor, clf, feature_cols
+
+
+with st.spinner("Initialising risk model…"):
+    preprocessor, clf, feature_cols = load_artifacts()
+
+
+# ─── Hero ─────────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="hero">
+    <div class="hero-eyebrow">Credit Risk Intelligence</div>
+    <h1>FinGuard AI – <em>Loan Default Risk System</em></h1>
+    <p class="hero-sub">
+        Instant loan default risk assessment powered by Decision Tree.
+        Enter applicant details to receive a real-time default probability
+        and lending recommendation.
+    </p>
+    <div class="model-badge"> Decision Tree · 90.6% Accuracy</div>
+    <div class="hero-stats">
+        <div class="hstat"><span class="hstat-val">2</span><span class="hstat-lbl">Risk Classes</span></div>
+        <div class="hstat"><span class="hstat-val">6</span><span class="hstat-lbl">Key Inputs</span></div>
+        <div class="hstat"><span class="hstat-val">90.6%</span><span class="hstat-lbl">Accuracy</span></div>
+        <div class="hstat"><span class="hstat-val">GBC</span><span class="hstat-lbl">Algorithm</span></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ─── Section 1: Applicant Profile ────────────────────────────────────────────
+st.markdown('<div class="icard"><div class="icard-label">👤 Applicant Profile</div>', unsafe_allow_html=True)
+c1, c2, c3 = st.columns(3)
+with c1:
+    age = st.slider(
+        "Age", 21, 70, 35,
+        help="Applicant's age in years"
+    )
+with c2:
+    gender = st.selectbox(
+        "Gender", ["Male", "Female"],
+        help="Applicant's gender"
+    )
+with c3:
+    marital_status = st.selectbox(
+        "Marital Status", ["Married", "Single"],
+        help="Applicant's marital status"
+    )
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ─── Section 2: Financial Profile ────────────────────────────────────────────
+st.markdown('<div class="icard"><div class="icard-label">💰 Financial Profile</div>', unsafe_allow_html=True)
+c4, c5 = st.columns(2)
+with c4:
+    income = st.slider(
+        "Annual Income (₹)", 15000, 200000, 73000, 1000,
+        help="Applicant's gross annual income"
+    )
+    credit_score = st.slider(
+        "Credit Score", 300, 900, 670, 5,
+        help="Higher score = lower risk. 750+ is excellent."
+    )
+with c5:
+    loan_amount = st.slider(
+        "Loan Amount Requested (₹)", 2000, 80000, 27000, 500,
+        help="Total loan amount applied for"
+    )
+    employment_status = st.selectbox(
+        "Employment Status",
+        ["Employed", "Self-employed", "Unemployed"],
+        help="Stability of income source — strongly affects default risk"
+    )
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ─── Assess Button ────────────────────────────────────────────────────────────
+assess = st.button("🔍  Assess Loan Risk", use_container_width=True)
+
+if assess:
+    # ── Derive engineered features ────────────────────────────────────────────
+    applicant_id     = 1
+    income_loan_ratio = income / loan_amount
+    loan_burden       = loan_amount / income
+    income_x_age      = income * age
+    loan_x_income     = loan_amount * income
+    loan_per_age      = loan_amount / age
+    loan_amount_log   = np.log1p(loan_amount)
+    income_log        = np.log1p(income)
+
+    risk_score = (
+        (700 - credit_score) * 50
+        + loan_burden * 5000
+        - (income / 1000)
+        + (8000 if employment_status == 'Unemployed' else 0)
+        + (2000 if employment_status == 'Self-employed' else 0)
+    )
+
+    row = {
+        'applicant_id': applicant_id, 'gender': gender, 'age': age, 'income': income,
+        'loan_amount': loan_amount, 'credit_score': credit_score,
+        'employment_status': employment_status, 'marital_status': marital_status,
+        'income_loan_ratio': income_loan_ratio, 'loan_burden': loan_burden,
+        'risk_score': risk_score, 'income_x_age': income_x_age,
+        'loan_x_income': loan_x_income, 'loan_per_age': loan_per_age,
+        'loan_amount_log': loan_amount_log, 'income_log': income_log,
+    }
+
+    for extra_col in ['age_group', 'income_level', 'loan_level']:
+        row[extra_col] = 'NA'
+
+    X_input = pd.DataFrame([row], columns=feature_cols)
+
+    with st.spinner("Running credit risk model…"):
+        time.sleep(0.45)
+        X_t = preprocessor.transform(X_input)
+        prediction    = clf.predict(X_t)[0]          # 0=No Default, 1=Default
+        probabilities = clf.predict_proba(X_t)[0]
+
+    p_default    = probabilities[1] * 100
+    p_no_default = probabilities[0] * 100
+
+    # ── Risk tier ────────────────────────────────────────────────────────────
+    if p_default < 25:
+        tier, css, icon, color = "Low Risk", "result-good", "✅", "#2ECC71"
+        action = (
+            "💚 <strong>Recommendation: Approve.</strong> Applicant shows strong "
+            "repayment indicators. Standard interest rate terms apply."
+        )
+    elif p_default < 55:
+        tier, css, icon, color = "Moderate Risk", "result-warn", "⚠️", "#FFB020"
+        action = (
+            "🟡 <strong>Recommendation: Review further.</strong> Consider requesting "
+            "additional collateral, a co-signer, or adjusted loan terms before approval."
+        )
+    else:
+        tier, css, icon, color = "High Risk", "result-bad", "🚫", "#E74C3C"
+        action = (
+            "🔴 <strong>Recommendation: Decline or restructure.</strong> Default "
+            "probability is high. If proceeding, require collateral and a higher "
+            "interest rate to offset risk."
+        )
+
+    # ── Result card ──────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div class="{css}">
+        <div class="res-icon">{icon}</div>
+        <div class="res-verdict">{tier}</div>
+        <div class="res-type">Loan Default Assessment</div>
+        <div class="res-conf">{p_default:.1f}%</div>
+        <div class="res-sub">probability of default</div>
+        <div class="res-action">{action}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Risk gauge ───────────────────────────────────────────────────────────
+    gauge_html = f"""
+    <div class="gauge-wrap">
+        <div class="gauge-label">
+            <span>Low Risk</span><span>Moderate Risk</span><span>High Risk</span>
+        </div>
+        <div class="gauge-track">
+            <div class="gauge-seg" style="width:25%; background:#2ECC71;"></div>
+            <div class="gauge-seg" style="width:30%; background:#FFB020;"></div>
+            <div class="gauge-seg" style="width:45%; background:#E74C3C;"></div>
+        </div>
+        <div style="position:relative; height:0;">
+            <div style="position:absolute; top:-22px; left:{min(max(p_default,0),100):.1f}%;
+                        transform:translateX(-50%); font-family:'JetBrains Mono',monospace;
+                        font-size:0.95rem; color:{color};">▼</div>
+        </div>
+    </div>
     """
-    Transparent rule-based risk score (0-100).
-    Mimics a decision tree using financial & demographic rules.
+    st.markdown(gauge_html, unsafe_allow_html=True)
+
+    # ── Summary chips ─────────────────────────────────────────────────────────
+    chips = f"""
+    <div class="chips">
+        <div class="chip">
+            <span class="chip-k">Credit Score</span>
+            <span class="chip-v">{credit_score}</span>
+        </div>
+        <div class="chip">
+            <span class="chip-k">Loan / Income</span>
+            <span class="chip-v">{loan_burden*100:.0f}%</span>
+        </div>
+        <div class="chip">
+            <span class="chip-k">Employment</span>
+            <span class="chip-v">{employment_status}</span>
+        </div>
+        <div class="chip">
+            <span class="chip-k">No-Default Prob</span>
+            <span class="chip-v">{p_no_default:.1f}%</span>
+        </div>
+    </div>
     """
-    risk = 0
+    st.markdown(chips, unsafe_allow_html=True)
 
-    # 1. Credit score branch
-    if credit_score >= 750:
-        risk -= 25
-    elif credit_score >= 650:
-        risk -= 5
-    elif credit_score >= 550:
-        risk += 15
-    else:
-        risk += 35
-
-    # 2. Debt-to-income ratio (loan/income)
-    dti = loan_amount / income if income > 0 else 999
-    if dti > 0.5:
-        risk += 30
-    elif dti > 0.3:
-        risk += 12
-    else:
-        risk -= 10
-
-    # 3. Employment status
-    if employment_status == "Unemployed":
-        risk += 25
-    elif employment_status == "Self-employed":
-        risk += 8
-    else:  # Employed
-        risk -= 5
-
-    # 4. Age factor
-    if age < 25:
-        risk += 12
-    elif age > 60:
-        risk += 8
-    elif 35 <= age <= 50:
-        risk -= 5
-
-    # 5. Marital status (small adjustment)
-    if marital_status == "Single":
-        risk += 3
-
-    # 6. Loan amount absolute (extra safety)
-    if loan_amount > 50000:
-        risk += 10
-    elif loan_amount < 10000:
-        risk -= 5
-
-    # Clamp between 0 and 100
-    return np.clip(risk, 0, 100)
-
-def get_risk_category(risk_score):
-    if risk_score >= 70:
-        return "High Risk", "risk-high", f"{risk_score:.1f} / 100", "#c62828"
-    elif risk_score >= 30:
-        return "Medium Risk", "risk-medium", f"{risk_score:.1f} / 100", "#e65100"
-    else:
-        return "Low Risk", "risk-low", f"{risk_score:.1f} / 100", "#2e7d32"
-
-# ============================================================
-# GAUGE CHART (Plotly) – Enhanced Colors
-# ============================================================
-def create_gauge(risk_score):
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = risk_score,
-        title = {'text': "Risk Meter", 'font': {'size': 16, 'color': '#1f6d6d', 'weight': 'bold'}},
-        gauge = {
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#1f6d6d"},
-            'bar': {'color': "#2c7a7a"},
-            'bgcolor': "#fafcfd",
-            'borderwidth': 2,
-            'bordercolor': "#cce6e6",
-            'steps': [
-                {'range': [0, 30], 'color': '#b2dfdb'},
-                {'range': [30, 70], 'color': '#ffe0b2'},
-                {'range': [70, 100], 'color': '#ffcdd2'}
-            ],
-            'threshold': {
-                'line': {'color': "#c62828", 'width': 4},
-                'thickness': 0.75,
-                'value': risk_score
-            }
-        }
-    ))
-    fig.update_layout(height=250, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor="rgba(0,0,0,0)")
-    return fig
-
-# ============================================================
-# MAIN APP
-# ============================================================
-def main():
-    # Header
-    st.markdown('<div class="main-header">🛡️ FinGuard AI – Loan Default Risk Assessment System</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Intelligent credit risk analytics powered by a Decision Tree classifier</div>', unsafe_allow_html=True)
-
-    # Top metric cards
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f'<div class="metric-card"><div class="metric-value">{ACCURACY:.1%}</div><div class="metric-label">MODEL ACCURACY</div></div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(f'<div class="metric-card"><div class="metric-value">{F1_SCORE:.3f}</div><div class="metric-label">F1 SCORE</div></div>', unsafe_allow_html=True)
-    with col3:
-        st.markdown(f'<div class="metric-card"><div class="metric-value">{MODEL_NAME}</div><div class="metric-label">ALGORITHM</div></div>', unsafe_allow_html=True)
-    with col4:
-        st.markdown(f'<div class="metric-card"><div class="metric-value">{TRAINING_SAMPLES:,}</div><div class="metric-label">TRAINING SAMPLES</div></div>', unsafe_allow_html=True)
-
-    # Two-column layout for inputs
-    left_col, right_col = st.columns(2, gap="large")
-
-    with left_col:
-        st.markdown('<div class="input-section">', unsafe_allow_html=True)
-        st.markdown('<div class="section-title">📋 DEMOGRAPHIC & EMPLOYMENT</div>', unsafe_allow_html=True)
-        gender = st.selectbox("Gender", ["Female", "Male"], help="Legal gender")
-        age = st.number_input("Age (years)", min_value=18, max_value=100, value=30, step=1)
-        employment_status = st.selectbox("Employment Status", ["Employed", "Self-employed", "Unemployed"])
-        marital_status = st.selectbox("Marital Status", ["Married", "Single"])
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with right_col:
-        st.markdown('<div class="input-section">', unsafe_allow_html=True)
-        st.markdown('<div class="section-title">💰 FINANCIAL METRICS</div>', unsafe_allow_html=True)
-        income = st.number_input("Annual Income ($)", min_value=0, max_value=500_000, value=50_000, step=1_000)
-        loan_amount = st.number_input("Loan Amount Requested ($)", min_value=0, max_value=200_000, value=20_000, step=1_000)
-        credit_score = st.number_input("Credit Score (300–850)", min_value=300, max_value=850, value=650, step=10, help="Higher is better")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Analyze button
-    analyze = st.button("🔍 ANALYZE RISK WITH FINGUARD AI", use_container_width=True)
-
-    # Result area
-    st.markdown('<div class="risk-card">', unsafe_allow_html=True)
-    if analyze:
-        if income <= 0 or loan_amount <= 0:
-            st.error("❌ Income and loan amount must be positive values.")
-        else:
-            # Compute risk using the rule-based decision tree
-            risk_score = calculate_risk(age, income, loan_amount, credit_score, employment_status, marital_status)
-            risk_label, risk_class, risk_display, color = get_risk_category(risk_score)
-            
-            # Show result
-            st.markdown(f'<div class="{risk_class}" style="border-radius:1.2rem; padding:1.2rem;">'
-                        f'<h3 style="margin:0; font-weight:700;">{risk_label}</h3>'
-                        f'<p class="risk-value">{risk_display}</p>'
-                        f'<p style="margin:0; font-weight:500;">{"High probability of default – caution required" if risk_score >= 70 else "Moderate risk – manual review recommended" if risk_score >= 30 else "Low probability of default – favorable for approval"}</p>'
-                        f'</div>', unsafe_allow_html=True)
-            
-            # Risk gauge
-            gauge = create_gauge(risk_score)
-            st.plotly_chart(gauge, use_container_width=True)
-            
-            # Additional derived metrics expander
-            with st.expander("📊 View detailed financial ratios"):
-                dti = loan_amount / income if income > 0 else 0
-                col_a, col_b, col_c = st.columns(3)
-                with col_a:
-                    st.metric("Debt-to-Income Ratio", f"{dti:.2f}")
-                with col_b:
-                    st.metric("Loan Burden (%)", f"{(dti*100):.1f}%")
-                with col_c:
-                    st.metric("Credit Score Health", f"{credit_score} / 850")
-                st.info(f"🧬 Age group: {'<25' if age<25 else '26-35' if age<=35 else '36-50' if age<=50 else '50+'} | "
-                        f"Income level: {'<30k' if income<30000 else '30k-80k' if income<=80000 else '>80k'} | "
-                        f"Loan level: {'<10k' if loan_amount<10000 else '10k-50k' if loan_amount<=50000 else '>50k'}")
-    else:
-        st.info("👈 Fill in the applicant details and click **Analyze Risk** to get a loan default prediction.")
-        # Show a placeholder gauge
-        placeholder_gauge = create_gauge(0)
-        st.plotly_chart(placeholder_gauge, use_container_width=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Footer
-    st.markdown('<div class="footer">⚠️ FinGuard AI is an AI‑powered risk assessment tool. Final lending decisions should include human underwriting and additional verification.<br>© 2026 FinGuard AI – Decision Tree Risk Engine</div>', unsafe_allow_html=True)
-
-if __name__ == "__main__":
-    main()
+# ─── Footer ───────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="app-footer">
+   Decision Tree · Credit Risk Engine · FinGuard AI – Loan Default Risk System v1.0
+</div>
+""", unsafe_allow_html=True)
