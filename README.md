@@ -115,6 +115,11 @@ joblib>=1.3.0
 
 ---
 
+
+##  Live Demo 
+https://finguard-ai-loan-default-risk-assessment-0.streamlit.app
+
+
 ##  App Walkthrough
 
 1. **Applicant Profile** — Enter age, gender, and marital status
